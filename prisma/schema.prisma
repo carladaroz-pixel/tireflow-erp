@@ -27,17 +27,49 @@ enum SessionRevocationReason {
   @@map("session_revocation_reason")
 }
 
+enum OrganizationStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+
+  @@map("organization_status")
+}
+
+enum OrganizationMembershipStatus {
+  ACTIVE
+  SUSPENDED
+  REVOKED
+
+  @@map("organization_membership_status")
+}
+
+enum StoreStatus {
+  ACTIVE
+  INACTIVE
+
+  @@map("store_status")
+}
+
+enum StoreAccessStatus {
+  ACTIVE
+  INACTIVE
+  REVOKED
+
+  @@map("store_access_status")
+}
+
 model User {
-  id              String          @id @default(uuid(7)) @db.Uuid
-  email           String          @db.VarChar(320)
-  normalizedEmail String          @unique(map: "users_normalized_email_key") @map("normalized_email") @db.VarChar(320)
-  name            String          @db.VarChar(160)
-  status          UserStatus      @default(ACTIVE)
-  emailVerifiedAt DateTime?       @map("email_verified_at") @db.Timestamptz(3)
-  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt       DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id              String                   @id @default(uuid(7)) @db.Uuid
+  email           String                   @db.VarChar(320)
+  normalizedEmail String                   @unique(map: "users_normalized_email_key") @map("normalized_email") @db.VarChar(320)
+  name            String                   @db.VarChar(160)
+  status          UserStatus               @default(ACTIVE)
+  emailVerifiedAt DateTime?                @map("email_verified_at") @db.Timestamptz(3)
+  createdAt       DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(3)
   credential      UserCredential?
   sessions        Session[]
+  memberships     OrganizationMembership[]
 
   @@index([status], map: "users_status_idx")
   @@map("users")
@@ -56,22 +88,110 @@ model UserCredential {
 }
 
 model Session {
-  id            String                   @id @default(uuid(7)) @db.Uuid
-  userId        String                   @map("user_id") @db.Uuid
-  tokenHash     String                   @unique(map: "sessions_token_hash_key") @map("token_hash") @db.Char(64)
-  createdAt     DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
-  lastSeenAt    DateTime                 @default(now()) @map("last_seen_at") @db.Timestamptz(3)
-  expiresAt     DateTime                 @map("expires_at") @db.Timestamptz(3)
-  idleExpiresAt DateTime                 @map("idle_expires_at") @db.Timestamptz(3)
-  revokedAt     DateTime?                @map("revoked_at") @db.Timestamptz(3)
-  revokedReason SessionRevocationReason? @map("revoked_reason")
-  ipHash        String?                  @map("ip_hash") @db.Char(64)
-  userAgent     String?                  @map("user_agent") @db.VarChar(512)
-  user          User                     @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  id                             String                   @id @default(uuid(7)) @db.Uuid
+  userId                         String                   @map("user_id") @db.Uuid
+  tokenHash                      String                   @unique(map: "sessions_token_hash_key") @map("token_hash") @db.Char(64)
+  createdAt                      DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
+  lastSeenAt                     DateTime                 @default(now()) @map("last_seen_at") @db.Timestamptz(3)
+  expiresAt                      DateTime                 @map("expires_at") @db.Timestamptz(3)
+  idleExpiresAt                  DateTime                 @map("idle_expires_at") @db.Timestamptz(3)
+  revokedAt                      DateTime?                @map("revoked_at") @db.Timestamptz(3)
+  revokedReason                  SessionRevocationReason? @map("revoked_reason")
+  ipHash                         String?                  @map("ip_hash") @db.Char(64)
+  userAgent                      String?                  @map("user_agent") @db.VarChar(512)
+  activeOrganizationId           String?                  @map("active_organization_id") @db.Uuid
+  activeOrganizationMembershipId String?                  @map("active_organization_membership_id") @db.Uuid
+  activeStoreId                  String?                  @map("active_store_id") @db.Uuid
+  contextUpdatedAt               DateTime?                @map("context_updated_at") @db.Timestamptz(3)
+  contextVersion                 Int                      @default(0) @map("context_version")
+  user                           User                     @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  activeMembership               OrganizationMembership?  @relation("SessionActiveMembership", fields: [activeOrganizationId, activeOrganizationMembershipId, userId], references: [organizationId, id, userId], onDelete: Restrict, onUpdate: Cascade, map: "sessions_active_membership_fkey")
+  activeStore                    Store?                   @relation("SessionActiveStore", fields: [activeOrganizationId, activeStoreId], references: [organizationId, id], onDelete: Restrict, onUpdate: Cascade, map: "sessions_active_store_fkey")
+  activeStoreAccess              StoreAccess?             @relation("SessionActiveStoreAccess", fields: [activeOrganizationId, activeOrganizationMembershipId, activeStoreId], references: [organizationId, organizationMembershipId, storeId], onDelete: Restrict, onUpdate: Cascade, map: "sessions_active_store_access_fkey")
 
   @@index([userId, revokedAt, expiresAt], map: "sessions_user_active_idx")
   @@index([expiresAt], map: "sessions_expires_at_idx")
   @@index([idleExpiresAt], map: "sessions_idle_expires_at_idx")
   @@index([revokedAt], map: "sessions_revoked_at_idx")
+  @@index([activeOrganizationId, userId], map: "sessions_active_organization_user_idx")
+  @@index([activeOrganizationMembershipId], map: "sessions_active_membership_idx")
+  @@index([activeStoreId], map: "sessions_active_store_idx")
   @@map("sessions")
+}
+
+model Organization {
+  id          String                   @id @default(uuid(7)) @db.Uuid
+  legalName   String                   @map("legal_name") @db.VarChar(200)
+  tradeName   String                   @map("trade_name") @db.VarChar(160)
+  slug        String                   @unique(map: "organizations_slug_key") @db.VarChar(80)
+  status      OrganizationStatus       @default(ACTIVE)
+  createdAt   DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(3)
+  memberships OrganizationMembership[]
+  stores      Store[]
+
+  @@index([status], map: "organizations_status_idx")
+  @@map("organizations")
+}
+
+model OrganizationMembership {
+  id             String                       @id @default(uuid(7)) @db.Uuid
+  organizationId String                       @map("organization_id") @db.Uuid
+  userId         String                       @map("user_id") @db.Uuid
+  status         OrganizationMembershipStatus @default(ACTIVE)
+  joinedAt       DateTime                     @default(now()) @map("joined_at") @db.Timestamptz(3)
+  disabledAt     DateTime?                    @map("disabled_at") @db.Timestamptz(3)
+  disabledReason String?                      @map("disabled_reason") @db.VarChar(240)
+  createdAt      DateTime                     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime                     @updatedAt @map("updated_at") @db.Timestamptz(3)
+  organization   Organization                 @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  user           User                         @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  storeAccesses  StoreAccess[]
+  activeSessions Session[]                    @relation("SessionActiveMembership")
+
+  @@unique([organizationId, userId], map: "organization_memberships_organization_user_key")
+  @@unique([organizationId, id], map: "organization_memberships_organization_id_key")
+  @@unique([organizationId, id, userId], map: "organization_memberships_context_key")
+  @@index([userId, status, organizationId], map: "organization_memberships_user_status_idx")
+  @@index([organizationId, status], map: "organization_memberships_organization_status_idx")
+  @@map("organization_memberships")
+}
+
+model Store {
+  id             String        @id @default(uuid(7)) @db.Uuid
+  organizationId String        @map("organization_id") @db.Uuid
+  name           String        @db.VarChar(160)
+  code           String        @db.VarChar(40)
+  status         StoreStatus   @default(ACTIVE)
+  isHeadquarters Boolean       @default(false) @map("is_headquarters")
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  storeAccesses  StoreAccess[]
+  activeSessions Session[]     @relation("SessionActiveStore")
+
+  @@unique([organizationId, code], map: "stores_organization_code_key")
+  @@unique([organizationId, id], map: "stores_organization_id_key")
+  @@index([organizationId, status], map: "stores_organization_status_idx")
+  @@map("stores")
+}
+
+model StoreAccess {
+  id                       String                 @id @default(uuid(7)) @db.Uuid
+  organizationId           String                 @map("organization_id") @db.Uuid
+  organizationMembershipId String                 @map("organization_membership_id") @db.Uuid
+  storeId                  String                 @map("store_id") @db.Uuid
+  status                   StoreAccessStatus      @default(ACTIVE)
+  revokedAt                DateTime?              @map("revoked_at") @db.Timestamptz(3)
+  createdAt                DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
+  organizationMembership   OrganizationMembership @relation(fields: [organizationId, organizationMembershipId], references: [organizationId, id], onDelete: Restrict, onUpdate: Cascade, map: "store_accesses_organization_membership_fkey")
+  store                    Store                  @relation(fields: [organizationId, storeId], references: [organizationId, id], onDelete: Restrict, onUpdate: Cascade, map: "store_accesses_organization_store_fkey")
+  activeSessions           Session[]              @relation("SessionActiveStoreAccess")
+
+  @@unique([organizationMembershipId, storeId], map: "store_accesses_membership_store_key")
+  @@unique([organizationId, organizationMembershipId, storeId], map: "store_accesses_context_key")
+  @@index([organizationMembershipId, status, storeId], map: "store_accesses_membership_status_idx")
+  @@index([storeId, status, organizationMembershipId], map: "store_accesses_store_status_idx")
+  @@map("store_accesses")
 }

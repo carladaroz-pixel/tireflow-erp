@@ -161,12 +161,14 @@ describe("identity security primitives", () => {
     });
   });
 
-  test("contains no tenant fields in identity or session models", () => {
+  test("keeps global identity tenant-free and limits Session to approved context fields", () => {
     const schema = readFileSync("prisma/schema.prisma", "utf8");
-    const schemaModels = [...schema.matchAll(/^model\s+(\w+)/gm)].map(
-      ([, name]) => name,
-    );
-    const forbiddenFields = [
+    const userModel = schema.match(/model User \{[\s\S]*?\n\}/)?.[0] ?? "";
+    const credentialModel =
+      schema.match(/model UserCredential \{[\s\S]*?\n\}/)?.[0] ?? "";
+    const sessionModel =
+      schema.match(/model Session \{[\s\S]*?\n\}/)?.[0] ?? "";
+    const forbiddenIdentityFields = [
       "organizationId",
       "membershipId",
       "storeId",
@@ -174,9 +176,14 @@ describe("identity security primitives", () => {
       "activeMembershipId",
       "activeStoreId",
     ];
-    assert.deepEqual(schemaModels, ["User", "UserCredential", "Session"]);
-    for (const field of forbiddenFields) {
-      assert.doesNotMatch(schema, new RegExp(`\\b${field}\\b`));
+    for (const field of forbiddenIdentityFields) {
+      assert.doesNotMatch(userModel, new RegExp(`\\b${field}\\b`));
+      assert.doesNotMatch(credentialModel, new RegExp(`\\b${field}\\b`));
     }
+    assert.match(sessionModel, /\bactiveOrganizationId\b/);
+    assert.match(sessionModel, /\bactiveOrganizationMembershipId\b/);
+    assert.match(sessionModel, /\bactiveStoreId\b/);
+    assert.match(sessionModel, /\bcontextUpdatedAt\b/);
+    assert.match(sessionModel, /\bcontextVersion\b/);
   });
 });

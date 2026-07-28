@@ -766,6 +766,11 @@ Um cabeçalho futuro `InventoryTransfer` pode controlar workflow. Na confirmaç�
 | 6 — Estrutura de estoque | Warehouse, StorageLocation; contratos para saldo/movimento | store | warehouses/locations demo | FKs compostas e códigos |
 | 7 — Auditoria | AuditLog, índices, privilégios/trigger | user, membership, store | nenhum log artificial obrigatório | imutabilidade e redaction |
 
+A especificação executável da Migration 2 está detalhada em
+`docs/migration-2-organizational-context-design.md`. Ela substitui qualquer
+interpretação anterior sobre os campos do contexto ativo da sessão e formaliza
+as FKs compostas, o acesso explícito por loja e o controle de concorrência.
+
 ### 16.1 Rollback lógico
 
 Produção não dependerá de “down migration” destrutiva. Rollback:
