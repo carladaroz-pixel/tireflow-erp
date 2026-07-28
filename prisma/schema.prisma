@@ -1,0 +1,77 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  BLOCKED
+
+  @@map("user_status")
+}
+
+enum SessionRevocationReason {
+  USER_LOGOUT
+  REVOKE_ALL
+  CREDENTIAL_CHANGED
+  USER_DISABLED
+  ADMINISTRATIVE
+  SECURITY
+
+  @@map("session_revocation_reason")
+}
+
+model User {
+  id              String          @id @default(uuid(7)) @db.Uuid
+  email           String          @db.VarChar(320)
+  normalizedEmail String          @unique(map: "users_normalized_email_key") @map("normalized_email") @db.VarChar(320)
+  name            String          @db.VarChar(160)
+  status          UserStatus      @default(ACTIVE)
+  emailVerifiedAt DateTime?       @map("email_verified_at") @db.Timestamptz(3)
+  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+  credential      UserCredential?
+  sessions        Session[]
+
+  @@index([status], map: "users_status_idx")
+  @@map("users")
+}
+
+model UserCredential {
+  id                String   @id @default(uuid(7)) @db.Uuid
+  userId            String   @unique(map: "user_credentials_user_id_key") @map("user_id") @db.Uuid
+  passwordHash      String   @map("password_hash") @db.VarChar(255)
+  passwordUpdatedAt DateTime @default(now()) @map("password_updated_at") @db.Timestamptz(3)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user              User     @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@map("user_credentials")
+}
+
+model Session {
+  id            String                   @id @default(uuid(7)) @db.Uuid
+  userId        String                   @map("user_id") @db.Uuid
+  tokenHash     String                   @unique(map: "sessions_token_hash_key") @map("token_hash") @db.Char(64)
+  createdAt     DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
+  lastSeenAt    DateTime                 @default(now()) @map("last_seen_at") @db.Timestamptz(3)
+  expiresAt     DateTime                 @map("expires_at") @db.Timestamptz(3)
+  idleExpiresAt DateTime                 @map("idle_expires_at") @db.Timestamptz(3)
+  revokedAt     DateTime?                @map("revoked_at") @db.Timestamptz(3)
+  revokedReason SessionRevocationReason? @map("revoked_reason")
+  ipHash        String?                  @map("ip_hash") @db.Char(64)
+  userAgent     String?                  @map("user_agent") @db.VarChar(512)
+  user          User                     @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([userId, revokedAt, expiresAt], map: "sessions_user_active_idx")
+  @@index([expiresAt], map: "sessions_expires_at_idx")
+  @@index([idleExpiresAt], map: "sessions_idle_expires_at_idx")
+  @@index([revokedAt], map: "sessions_revoked_at_idx")
+  @@map("sessions")
+}

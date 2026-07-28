@@ -12,6 +12,10 @@
 
 # testing
 /coverage
+/.test-dist/
+
+# generated Prisma Client
+/src/generated/prisma/
 
 # next.js
 /.next/

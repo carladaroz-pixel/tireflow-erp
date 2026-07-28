@@ -222,8 +222,8 @@ Não usar JWT longo como fonte autossuficiente de autorização: permissões, me
 - `User`: identidade global.
 - `UserCredential`: hash e política de senha, separado para reduzir exposição.
 - `Session`: token hasheado, usuário, expiração, revogação e contexto ativo.
-- `EmailVerificationToken`: uso único e validade curta.
-- `PasswordResetToken`: uso único, hasheado e validade curta.
+- `EmailVerificationToken` e `PasswordResetToken`: ficam para uma migration
+  futura, quando os respectivos fluxos forem implementados.
 - `LoginAttempt`: agregação para bloqueio/rate limit; poderá evoluir para storage especializado.
 - `OrganizationMembership` e `StoreAccess`: autorização organizacional.
 
@@ -419,9 +419,9 @@ Convenções: IDs UUIDv7 gerados pela aplicação/camada Prisma e persistidos co
 
 #### EmailVerificationToken / PasswordResetToken
 
-- **Campos:** `id`, `userId`, `tokenHash`, `expiresAt`, `usedAt?`, `createdAt`.
-- **Índices:** token único, expiração.
-- **Exclusão:** retenção curta; nunca logar token.
+Não fazem parte da Migration 1. Serão modelados em migration futura, com tokens
+hasheados, uso único e retenção curta, somente quando os fluxos de verificação de
+e-mail e recuperação de senha forem implementados.
 
 ### 11.2 Organização
 
@@ -758,8 +758,8 @@ Um cabeçalho futuro `InventoryTransfer` pode controlar workflow. Na confirmaç�
 
 | Migration | Tabelas/objetos | Dependências | Seed inicial | Risco/testes |
 |---|---|---|---|---|
-| 1 — Identidade global | User, UserCredential, Session sem contexto ativo, tokens, Organization | nenhuma | organização demo opcional em seed separado | email único, token/expiração |
-| 2 — Estrutura organizacional | Membership, Store, StoreAccess; adiciona contexto ativo à Session | migration 1 | owner e duas lojas fictícias | FKs tenant-aware, contexto de sessão, acesso cruzado |
+| 1 — Identidade e sessão global | User, UserCredential, Session sem contexto ativo | nenhuma | nenhum | email único, hash de token, expiração e revogação |
+| 2 — Estrutura organizacional | Organization, Membership, Store, StoreAccess; adiciona contexto ativo à Session | migration 1 | organização, owner e duas lojas fictícias opcionais | FKs tenant-aware, contexto de sessão, acesso cruzado |
 | 3 — RBAC | Permission, Role, RolePermission, MembershipRole, PlatformRole e junções globais | migration 2 | permissões e funções padrão | escalada e revogação |
 | 4 — White-label | OrganizationBranding, referência futura a Asset | organization | branding demo | fallback, domínio/cor |
 | 5 — Comercial | Plan, Module, Feature, junções, Subscription, entitlements, flags | organization | planos/módulos/features demo | precedência e assinatura única |
@@ -1072,6 +1072,9 @@ Para reduzir regressão, criar uma interface de dados entre telas e fontes. Prim
 4. `InventoryBalance`/`InventoryMovement` dependem de `StockItem`: permanecem como contrato, fora das sete migrations da Fundação.
 5. RLS deixou de ser “possível/futuro”: será defesa adicional a partir da Migration 2, condicionada ao spike de pooling.
 6. Administração global ganhou RBAC próprio e separado de roles tenant-scoped.
+7. A Migration 1 contém exclusivamente `User`, `UserCredential` e `Session`.
+   `Organization` passa a ser criada na Migration 2; tokens de verificação de
+   e-mail e recuperação de senha ficam para migration futura.
 
 ### 26.2 Decisões que bloqueiam a Migration 1
 
@@ -1082,7 +1085,7 @@ Os bloqueios de desenho foram resolvidos:
 - nomes físicos serão `snake_case` plural por `@map`/`@@map`.
 - runtime e migrations usarão URLs Neon distintas.
 
-Antes de **executar** a Migration 1 resta um pré-requisito operacional, não uma decisão arquitetural: fornecer `DATABASE_URL`, `DIRECT_DATABASE_URL` e `AUTH_SECRET` reais em arquivo local ignorado. Nenhum valor real entra no repositório.
+Antes de **executar** a Migration 1 resta um pré-requisito operacional, não uma decisão arquitetural: fornecer `DATABASE_URL`, `DIRECT_DATABASE_URL` e `AUTH_SECRET` reais em arquivo local ignorado. Nenhum valor real entra no repositório. `User` é global e não possui `organizationId` ou `storeId`; `UserCredential` contém somente o hash e metadados necessários; `Session` é própria do TireFlow e não possui organização, membership ou loja ativa até a Migration 2.
 
 ### 26.3 Decisões que não bloqueiam a Migration 1
 

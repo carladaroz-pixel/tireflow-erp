@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": false,
+    "incremental": false,
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "noEmit": false,
+    "outDir": ".test-dist",
+    "rewriteRelativeImportExtensions": true,
+    "target": "ES2022"
+  },
+  "include": [
+    "tests/**/*.ts",
+    "src/lib/auth/**/*.ts",
+    "src/lib/db/**/*.ts",
+    "src/generated/prisma/**/*.ts"
+  ]
+}
