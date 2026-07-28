@@ -1,0 +1,11 @@
+"use client";
+import { useState } from "react";
+import { TireFlowIcon } from "@/components/tireflow-icons";
+import { currency,demoMovements } from "@/lib/tireflow-demo-data";
+
+export default function MovementsPage(){
+ const [filter,setFilter]=useState("Todos"); const rows=demoMovements.filter(m=>filter==="Todos"||m.type===filter);
+ return <><header className="tireflow-page-head"><div><p className="tireflow-eyebrow">RASTREABILIDADE IMUTÁVEL</p><h1 className="tireflow-title">Movimentações de Estoque</h1><p className="tireflow-subtitle">Toda entrada, saída e estorno com responsável identificado.</p></div><div className="tireflow-actions"><button className="tireflow-btn"><TireFlowIcon name="download"/> Exportar histórico</button><button className="tireflow-btn primary"><TireFlowIcon name="plus"/> Nova movimentação</button></div></header>
+ <section className="tireflow-card tireflow-table-card"><div className="tireflow-toolbar"><label className="tireflow-filter"><TireFlowIcon name="search"/><input placeholder="Produto, identificação, responsável ou vínculo..."/></label><select className="tireflow-select" value={filter} onChange={e=>setFilter(e.target.value)}><option>Todos</option><option>Entrada</option><option>Saída</option><option>Estorno</option></select></div><div className="tireflow-table-wrap"><table className="tireflow-table"><thead><tr><th>MOVIMENTO</th><th>TIPO / MOTIVO</th><th>PRODUTO</th><th>QTD.</th><th>VÍNCULO</th><th>RESPONSÁVEL</th><th>VALOR</th><th>RISCO</th></tr></thead><tbody>{rows.map(m=><tr key={m.id}><td><strong>{m.id}</strong><small>{m.date} às {m.time}</small></td><td><span className={`tireflow-badge ${m.type==="Saída"?"orange":m.type==="Estorno"?"gray":""}`}>{m.type}</span><small>{m.reason}</small></td><td><strong>{m.product}</strong><small>{m.identification}</small></td><td><strong>{m.quantity}</strong></td><td>{m.linkedTo}</td><td><strong>{m.employee}</strong><small>{m.role}</small></td><td>{currency(m.value)}</td><td className={`tireflow-risk ${m.risk}`}>{m.risk}</td></tr>)}</tbody></table></div></section>
+ <div className="tireflow-note" style={{marginTop:14}}>Saídas sem venda ou ordem de serviço vinculada são sinalizadas automaticamente para análise do gerente ou administrador.</div></>;
+}
