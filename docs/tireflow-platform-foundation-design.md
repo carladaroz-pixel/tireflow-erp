@@ -6,7 +6,7 @@
 
 ## 1. Resumo executivo
 
-O TireFlow será uma plataforma SaaS multiempresa e multilojas. A identidade global de uma pessoa (`User`) será separada de seu vínculo com cada empresa (`OrganizationMembership`), das lojas às quais tem acesso (`StoreAccess`) e das funções que exerce (`MembershipRole`). Contratação comercial, autorização e liberação técnica serão verificações independentes.
+O TireFlow será uma plataforma SaaS multiempresa e multilojas. A identidade global de uma pessoa (`User`) será separada de seu vínculo com cada empresa (`OrganizationMembership`), das lojas às quais tem acesso (`StoreAccess`) e do papel organizacional exercido pela membership. No MVP, o papel é um `OrganizationRole` direto; `MembershipRole` fica reservado a uma evolução configurável futura. Contratação comercial, autorização e liberação técnica serão verificações independentes.
 
 O isolamento primário será por `organizationId`. Entidades operacionais de loja também carregarão `storeId`; entidades de estoque físico carregarão `warehouseId` e, quando necessário, `storageLocationId`. O servidor obterá esses identificadores de um contexto validado a partir da sessão, nunca aceitará um `organizationId` do cliente como prova de autorização e nunca dependerá de ocultação na interface.
 
@@ -245,6 +245,15 @@ Não usar JWT longo como fonte autossuficiente de autorização: permissões, me
 
 ## 7. RBAC e permissões
 
+> **Decisão do MVP (Migration 3):** a especificação executável está em
+> `docs/migration-3-minimal-rbac-design.md` e substitui, para o RBAC mínimo,
+> o modelo genérico de `Role`, `Permission`, `RolePermission`,
+> `MembershipRole`, papéis de plataforma e seeds descrito originalmente neste
+> documento. O MVP usa um único `OrganizationRole` diretamente em
+> `OrganizationMembership`, matriz fixa em TypeScript e `StoreAccess`
+> explícito inclusive para `OWNER`. As estruturas configuráveis abaixo ficam
+> apenas como direção de evolução futura.
+
 ### 7.1 Modelo
 
 - `Permission`: catálogo global de chaves estáveis.
@@ -456,7 +465,13 @@ e-mail e recuperação de senha forem implementados.
 - **Exclusão:** revogação auditada; histórico de evento preservado.
 - **Escopo:** organização/loja.
 
-### 11.3 RBAC
+### 11.3 RBAC configurável futuro
+
+Esta subseção não integra a Migration 3 mínima. O modelo vigente para o MVP é o
+papel direto na membership definido em
+`docs/migration-3-minimal-rbac-design.md`. As entidades abaixo somente poderão
+ser introduzidas por uma migration futura, após necessidade comprovada de
+papéis configuráveis.
 
 #### Permission
 
@@ -493,7 +508,9 @@ e-mail e recuperação de senha forem implementados.
 - **Unicidade:** role key global; `(platformRoleId, permissionId)`; `(userId, platformRoleId)`.
 - **Relações:** apenas usuários globais e permissões de plataforma; nunca `organizationId`.
 - **Exclusão:** revogação/inativação auditada; concessões históricas não são apagadas silenciosamente.
-- **Migration:** entra na Migration 3, junto do RBAC, e permite validar `createdByPlatformUserId` nos overrides comerciais.
+- **Migration:** não integra a Migration 3 mínima; dependerá de autorização e
+  migration futura próprias, quando administração global da plataforma for
+  necessária.
 - **Escopo:** plataforma global, totalmente separado de `Role` tenant-scoped.
 
 ### 11.4 White-label
@@ -609,16 +626,16 @@ User 1──N OrganizationMembership N──1 Organization
 
 Organization 1──1 OrganizationBranding
 Organization 1──N Store
-Organization 1──N Role
+Organization 1──N Role (futuro configurável)
 Organization 1──N OrganizationSubscription
 Organization 1──N OrganizationModule
 Organization 1──N OrganizationFeatureOverride
 Organization 1──N AuditLog
 
-OrganizationMembership N──N Role
-  via MembershipRole
-Role N──N Permission
-  via RolePermission
+OrganizationMembership N──N Role (futuro configurável)
+  via MembershipRole (futuro)
+Role N──N Permission (futuro)
+  via RolePermission (futuro)
 OrganizationMembership N──N Store
   via StoreAccess
 
@@ -687,7 +704,12 @@ PostgreSQL exige que as colunas referenciadas sejam uma PK ou `UNIQUE` na mesma 
 
 Não usar `relationMode = "prisma"`: a Fundação depende de FKs reais no PostgreSQL.
 
-Relações críticas usarão o mesmo padrão: `AuditLog.actorMembershipId`, `AuditLog.storeId`, `InventoryMovement.actorMembershipId`, `MembershipRole.grantedByMembershipId` e acessos de loja devem incluir `organizationId` na FK. Assim, mesmo inserts SQL diretos não poderão combinar ator, loja ou entidade de organizações distintas.
+Relações críticas usarão o mesmo padrão: `AuditLog.actorMembershipId`,
+`AuditLog.storeId`, `InventoryMovement.actorMembershipId` e acessos de loja
+devem incluir `organizationId` na FK. Um eventual
+`MembershipRole.grantedByMembershipId` configurável seguirá a mesma regra.
+Assim, mesmo inserts SQL diretos não poderão combinar ator, loja ou entidade de
+organizações distintas.
 
 ### 13.4 RLS no Neon
 
@@ -760,7 +782,7 @@ Um cabeçalho futuro `InventoryTransfer` pode controlar workflow. Na confirmaç�
 |---|---|---|---|---|
 | 1 — Identidade e sessão global | User, UserCredential, Session sem contexto ativo | nenhuma | nenhum | email único, hash de token, expiração e revogação |
 | 2 — Estrutura organizacional | Organization, Membership, Store, StoreAccess; adiciona contexto ativo à Session | migration 1 | organização, owner e duas lojas fictícias opcionais | FKs tenant-aware, contexto de sessão, acesso cruzado |
-| 3 — RBAC | Permission, Role, RolePermission, MembershipRole, PlatformRole e junções globais | migration 2 | permissões e funções padrão | escalada e revogação |
+| 3 — RBAC mínimo | enum OrganizationRole; coluna role em OrganizationMembership; matriz fixa em TypeScript | migration 2 | nenhum | matriz, IDOR, escalada, último owner e revogação |
 | 4 — White-label | OrganizationBranding, referência futura a Asset | organization | branding demo | fallback, domínio/cor |
 | 5 — Comercial | Plan, Module, Feature, junções, Subscription, entitlements, flags | organization | planos/módulos/features demo | precedência e assinatura única |
 | 6 — Estrutura de estoque | Warehouse, StorageLocation; contratos para saldo/movimento | store | warehouses/locations demo | FKs compostas e códigos |
@@ -770,6 +792,13 @@ A especificação executável da Migration 2 está detalhada em
 `docs/migration-2-organizational-context-design.md`. Ela substitui qualquer
 interpretação anterior sobre os campos do contexto ativo da sessão e formaliza
 as FKs compostas, o acesso explícito por loja e o controle de concorrência.
+
+A especificação executável da Migration 3 está detalhada em
+`docs/migration-3-minimal-rbac-design.md`. Ela substitui o catálogo genérico de
+entidades RBAC para o MVP por papel direto na membership, matriz fixa em código
+e regras transacionais de ownership. A implementação foi aplicada na migration
+`20260728233511_minimal_organizational_rbac`; papel e permissões não são
+persistidos na `Session`, e o `AuthorizationContext` é revalidado por operação.
 
 ### 16.1 Rollback lógico
 

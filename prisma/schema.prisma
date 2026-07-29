@@ -43,6 +43,16 @@ enum OrganizationMembershipStatus {
   @@map("organization_membership_status")
 }
 
+enum OrganizationRole {
+  OWNER
+  ADMIN
+  MANAGER
+  OPERATOR
+  VIEWER
+
+  @@map("organization_role")
+}
+
 enum StoreStatus {
   ACTIVE
   INACTIVE
@@ -139,6 +149,7 @@ model OrganizationMembership {
   organizationId String                       @map("organization_id") @db.Uuid
   userId         String                       @map("user_id") @db.Uuid
   status         OrganizationMembershipStatus @default(ACTIVE)
+  role           OrganizationRole             @default(VIEWER)
   joinedAt       DateTime                     @default(now()) @map("joined_at") @db.Timestamptz(3)
   disabledAt     DateTime?                    @map("disabled_at") @db.Timestamptz(3)
   disabledReason String?                      @map("disabled_reason") @db.VarChar(240)
@@ -154,6 +165,7 @@ model OrganizationMembership {
   @@unique([organizationId, id, userId], map: "organization_memberships_context_key")
   @@index([userId, status, organizationId], map: "organization_memberships_user_status_idx")
   @@index([organizationId, status], map: "organization_memberships_organization_status_idx")
+  @@index([organizationId, status, role], map: "organization_memberships_organization_status_role_idx")
   @@map("organization_memberships")
 }
 

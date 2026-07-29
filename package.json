@@ -10,7 +10,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "tsc --project tsconfig.test.json && node --env-file=.env.local --test .test-dist/tests/auth-foundation.test.js .test-dist/tests/organizational-context.test.js",
+    "test": "tsc --project tsconfig.test.json && node --env-file=.env.local --test .test-dist/tests/auth-foundation.test.js .test-dist/tests/organizational-context.test.js .test-dist/tests/minimal-rbac.test.js",
     "prisma:validate": "prisma validate",
     "prisma:generate": "prisma generate"
   },
