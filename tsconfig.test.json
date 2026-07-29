@@ -12,7 +12,9 @@
   },
   "include": [
     "tests/**/*.ts",
+    "scripts/**/*.ts",
     "src/lib/auth/**/*.ts",
+    "src/lib/bootstrap/**/*.ts",
     "src/lib/db/**/*.ts",
     "src/generated/prisma/**/*.ts"
   ]

@@ -68,18 +68,64 @@ enum StoreAccessStatus {
   @@map("store_access_status")
 }
 
+enum ProductType {
+  TIRE
+  PRODUCT
+  SERVICE
+}
+
+enum StockMovementType {
+  ENTRY
+  EXIT
+}
+
+enum ServiceOrderStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING
+  FINISHED
+  CANCELLED
+}
+
+enum InvoiceImportStatus {
+  UPLOADED
+  PROCESSING
+  REVIEW_REQUIRED
+  READY
+  APPROVED
+  FAILED
+  CANCELLED
+}
+
+enum InvoiceItemReviewStatus {
+  PENDING
+  MATCHED
+  IGNORED
+}
+
+enum ProductCodeType {
+  BARCODE
+  INTERNAL
+  SUPPLIER
+  ALTERNATIVE
+}
+
 model User {
-  id              String                   @id @default(uuid(7)) @db.Uuid
-  email           String                   @db.VarChar(320)
-  normalizedEmail String                   @unique(map: "users_normalized_email_key") @map("normalized_email") @db.VarChar(320)
-  name            String                   @db.VarChar(160)
-  status          UserStatus               @default(ACTIVE)
-  emailVerifiedAt DateTime?                @map("email_verified_at") @db.Timestamptz(3)
-  createdAt       DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt       DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(3)
-  credential      UserCredential?
-  sessions        Session[]
-  memberships     OrganizationMembership[]
+  id                     String                   @id @default(uuid(7)) @db.Uuid
+  email                  String                   @db.VarChar(320)
+  normalizedEmail        String                   @unique(map: "users_normalized_email_key") @map("normalized_email") @db.VarChar(320)
+  name                   String                   @db.VarChar(160)
+  status                 UserStatus               @default(ACTIVE)
+  emailVerifiedAt        DateTime?                @map("email_verified_at") @db.Timestamptz(3)
+  createdAt              DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt              DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(3)
+  credential             UserCredential?
+  sessions               Session[]
+  memberships            OrganizationMembership[]
+  stockMovements         StockMovement[]
+  serviceOrders          ServiceOrder[]
+  createdInvoiceImports  InvoiceImport[]          @relation("InvoiceCreatedBy")
+  reviewedInvoiceImports InvoiceImport[]          @relation("InvoiceReviewedBy")
 
   @@index([status], map: "users_status_idx")
   @@map("users")
@@ -130,15 +176,20 @@ model Session {
 }
 
 model Organization {
-  id          String                   @id @default(uuid(7)) @db.Uuid
-  legalName   String                   @map("legal_name") @db.VarChar(200)
-  tradeName   String                   @map("trade_name") @db.VarChar(160)
-  slug        String                   @unique(map: "organizations_slug_key") @db.VarChar(80)
-  status      OrganizationStatus       @default(ACTIVE)
-  createdAt   DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt   DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(3)
-  memberships OrganizationMembership[]
-  stores      Store[]
+  id             String                   @id @default(uuid(7)) @db.Uuid
+  legalName      String                   @map("legal_name") @db.VarChar(200)
+  tradeName      String                   @map("trade_name") @db.VarChar(160)
+  slug           String                   @unique(map: "organizations_slug_key") @db.VarChar(80)
+  status         OrganizationStatus       @default(ACTIVE)
+  createdAt      DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(3)
+  memberships    OrganizationMembership[]
+  stores         Store[]
+  products       Product[]
+  customers      Customer[]
+  serviceOrders  ServiceOrder[]
+  suppliers      Supplier[]
+  invoiceImports InvoiceImport[]
 
   @@index([status], map: "organizations_status_idx")
   @@map("organizations")
@@ -170,22 +221,292 @@ model OrganizationMembership {
 }
 
 model Store {
-  id             String        @id @default(uuid(7)) @db.Uuid
-  organizationId String        @map("organization_id") @db.Uuid
-  name           String        @db.VarChar(160)
-  code           String        @db.VarChar(40)
-  status         StoreStatus   @default(ACTIVE)
-  isHeadquarters Boolean       @default(false) @map("is_headquarters")
-  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
-  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  id             String          @id @default(uuid(7)) @db.Uuid
+  organizationId String          @map("organization_id") @db.Uuid
+  name           String          @db.VarChar(160)
+  code           String          @db.VarChar(40)
+  status         StoreStatus     @default(ACTIVE)
+  isHeadquarters Boolean         @default(false) @map("is_headquarters")
+  createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   storeAccesses  StoreAccess[]
-  activeSessions Session[]     @relation("SessionActiveStore")
+  activeSessions Session[]       @relation("SessionActiveStore")
+  stockBalances  StockBalance[]
+  stockMovements StockMovement[]
+  serviceOrders  ServiceOrder[]
+  invoiceImports InvoiceImport[]
 
   @@unique([organizationId, code], map: "stores_organization_code_key")
   @@unique([organizationId, id], map: "stores_organization_id_key")
   @@index([organizationId, status], map: "stores_organization_status_idx")
   @@map("stores")
+}
+
+model Product {
+  id             String              @id @default(uuid(7)) @db.Uuid
+  organizationId String              @map("organization_id") @db.Uuid
+  type           ProductType
+  category       String              @db.VarChar(80)
+  name           String              @db.VarChar(180)
+  brand          String?             @db.VarChar(100)
+  model          String?             @db.VarChar(100)
+  size           String?             @db.VarChar(50)
+  rim            Int?
+  internalCode   String              @map("internal_code") @db.VarChar(60)
+  barcode        String?             @db.VarChar(80)
+  purchasePrice  Decimal             @default(0) @map("purchase_price") @db.Decimal(12, 2)
+  salePrice      Decimal             @default(0) @map("sale_price") @db.Decimal(12, 2)
+  minimumStock   Int                 @default(0) @map("minimum_stock")
+  active         Boolean             @default(true)
+  createdAt      DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+  organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  balances       StockBalance[]
+  movements      StockMovement[]
+  orderItems     ServiceOrderItem[]
+  invoiceItems   InvoiceImportItem[]
+  codes          ProductCode[]
+
+  @@unique([organizationId, internalCode])
+  @@unique([organizationId, id])
+  @@index([organizationId, active, type])
+  @@map("products")
+}
+
+model ProductCode {
+  id              String          @id @default(uuid(7)) @db.Uuid
+  organizationId  String          @map("organization_id") @db.Uuid
+  productId       String          @map("product_id") @db.Uuid
+  type            ProductCodeType
+  value           String          @db.VarChar(100)
+  normalizedValue String          @map("normalized_value") @db.VarChar(100)
+  isPrimary       Boolean         @default(false) @map("is_primary")
+  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  product         Product         @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Restrict)
+
+  @@unique([organizationId, normalizedValue])
+  @@index([organizationId, productId, type])
+  @@map("product_codes")
+}
+
+model TireCatalogItem {
+  id                String   @id @default(uuid(7)) @db.Uuid
+  brand             String?  @db.VarChar(100)
+  model             String?  @db.VarChar(100)
+  width             Int
+  profile           Int
+  rim               Int
+  normalizedMeasure String   @unique @map("normalized_measure") @db.VarChar(30)
+  measure           String   @db.VarChar(30)
+  vehicleType       String   @map("vehicle_type") @db.VarChar(50)
+  description       String   @db.VarChar(160)
+  active            Boolean  @default(true)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([active, width, profile, rim])
+  @@map("tire_catalog_items")
+}
+
+model StockBalance {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  storeId        String   @map("store_id") @db.Uuid
+  productId      String   @map("product_id") @db.Uuid
+  quantity       Int      @default(0)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  store          Store    @relation(fields: [organizationId, storeId], references: [organizationId, id], onDelete: Restrict)
+  product        Product  @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Restrict)
+
+  @@unique([organizationId, storeId, productId])
+  @@index([organizationId, storeId, quantity])
+  @@map("stock_balances")
+}
+
+model StockMovement {
+  id               String            @id @default(uuid(7)) @db.Uuid
+  organizationId   String            @map("organization_id") @db.Uuid
+  storeId          String            @map("store_id") @db.Uuid
+  productId        String            @map("product_id") @db.Uuid
+  userId           String            @map("user_id") @db.Uuid
+  serviceOrderId   String?           @map("service_order_id") @db.Uuid
+  invoiceImportId  String?           @map("invoice_import_id") @db.Uuid
+  type             StockMovementType
+  quantity         Int
+  previousBalance  Int               @map("previous_balance")
+  resultingBalance Int               @map("resulting_balance")
+  unitCost         Decimal?          @map("unit_cost") @db.Decimal(12, 2)
+  reason           String?           @db.VarChar(80)
+  supplier         String?           @db.VarChar(160)
+  document         String?           @db.VarChar(80)
+  notes            String?           @db.VarChar(500)
+  occurredAt       DateTime          @default(now()) @map("occurred_at") @db.Timestamptz(3)
+  createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+  store            Store             @relation(fields: [organizationId, storeId], references: [organizationId, id], onDelete: Restrict)
+  product          Product           @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Restrict)
+  user             User              @relation(fields: [userId], references: [id], onDelete: Restrict)
+  serviceOrder     ServiceOrder?     @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+  invoiceImport    InvoiceImport?    @relation(fields: [invoiceImportId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, storeId, occurredAt])
+  @@index([organizationId, storeId, productId])
+  @@map("stock_movements")
+}
+
+model Supplier {
+  id             String          @id @default(uuid(7)) @db.Uuid
+  organizationId String          @map("organization_id") @db.Uuid
+  taxId          String?         @map("tax_id") @db.VarChar(20)
+  legalName      String          @map("legal_name") @db.VarChar(200)
+  tradeName      String?         @map("trade_name") @db.VarChar(160)
+  createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  invoiceImports InvoiceImport[]
+
+  @@unique([organizationId, taxId])
+  @@unique([organizationId, id])
+  @@index([organizationId, legalName])
+  @@map("suppliers")
+}
+
+model InvoiceImport {
+  id               String              @id @default(uuid(7)) @db.Uuid
+  organizationId   String              @map("organization_id") @db.Uuid
+  storeId          String              @map("store_id") @db.Uuid
+  supplierId       String?             @map("supplier_id") @db.Uuid
+  createdByUserId  String              @map("created_by_user_id") @db.Uuid
+  reviewedByUserId String?             @map("reviewed_by_user_id") @db.Uuid
+  status           InvoiceImportStatus @default(UPLOADED)
+  originalFileName String              @map("original_file_name") @db.VarChar(240)
+  fileType         String              @map("file_type") @db.VarChar(80)
+  fileSize         Int                 @map("file_size")
+  invoiceNumber    String?             @map("invoice_number") @db.VarChar(80)
+  series           String?             @db.VarChar(30)
+  accessKey        String?             @map("access_key") @db.VarChar(60)
+  issuedAt         DateTime?           @map("issued_at") @db.Timestamptz(3)
+  totalAmount      Decimal?            @map("total_amount") @db.Decimal(14, 2)
+  extractedData    Json?               @map("extracted_data")
+  warnings         Json?
+  approvedAt       DateTime?           @map("approved_at") @db.Timestamptz(3)
+  createdAt        DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+  store            Store               @relation(fields: [organizationId, storeId], references: [organizationId, id], onDelete: Restrict)
+  organization     Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  supplier         Supplier?           @relation(fields: [organizationId, supplierId], references: [organizationId, id], onDelete: Restrict)
+  createdBy        User                @relation("InvoiceCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  reviewedBy       User?               @relation("InvoiceReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: Restrict)
+  items            InvoiceImportItem[]
+  movements        StockMovement[]
+
+  @@unique([organizationId, storeId, accessKey])
+  @@index([organizationId, storeId, status, createdAt])
+  @@index([organizationId, storeId, invoiceNumber, series])
+  @@map("invoice_imports")
+}
+
+model InvoiceImportItem {
+  id               String                  @id @default(uuid(7)) @db.Uuid
+  organizationId   String                  @map("organization_id") @db.Uuid
+  invoiceImportId  String                  @map("invoice_import_id") @db.Uuid
+  matchedProductId String?                 @map("matched_product_id") @db.Uuid
+  sequence         Int
+  supplierCode     String?                 @map("supplier_code") @db.VarChar(80)
+  barcode          String?                 @db.VarChar(80)
+  description      String                  @db.VarChar(300)
+  ncm              String?                 @db.VarChar(20)
+  cfop             String?                 @db.VarChar(10)
+  unit             String?                 @db.VarChar(20)
+  quantity         Decimal                 @db.Decimal(12, 3)
+  unitPrice        Decimal                 @map("unit_price") @db.Decimal(14, 4)
+  totalPrice       Decimal                 @map("total_price") @db.Decimal(14, 2)
+  brand            String?                 @db.VarChar(100)
+  tireSize         String?                 @map("tire_size") @db.VarChar(50)
+  dot              String?                 @db.VarChar(30)
+  confidence       Decimal?                @db.Decimal(5, 4)
+  reviewStatus     InvoiceItemReviewStatus @default(PENDING) @map("review_status")
+  createdAt        DateTime                @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime                @updatedAt @map("updated_at") @db.Timestamptz(3)
+  invoiceImport    InvoiceImport           @relation(fields: [invoiceImportId], references: [id], onDelete: Restrict)
+  matchedProduct   Product?                @relation(fields: [organizationId, matchedProductId], references: [organizationId, id], onDelete: Restrict)
+
+  @@unique([invoiceImportId, sequence])
+  @@index([organizationId, invoiceImportId])
+  @@map("invoice_import_items")
+}
+
+model Customer {
+  id             String         @id @default(uuid(7)) @db.Uuid
+  organizationId String         @map("organization_id") @db.Uuid
+  name           String         @db.VarChar(180)
+  taxId          String?        @map("tax_id") @db.VarChar(20)
+  phone          String         @db.VarChar(30)
+  whatsapp       String         @db.VarChar(30)
+  email          String?        @db.VarChar(320)
+  licensePlate   String         @map("license_plate") @db.VarChar(12)
+  vehicleModel   String         @map("vehicle_model") @db.VarChar(120)
+  notes          String?        @db.VarChar(500)
+  active         Boolean        @default(true)
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  serviceOrders  ServiceOrder[]
+
+  @@unique([organizationId, id])
+  @@index([organizationId, name])
+  @@index([organizationId, licensePlate])
+  @@map("customers")
+}
+
+model ServiceOrder {
+  id                String             @id @default(uuid(7)) @db.Uuid
+  organizationId    String             @map("organization_id") @db.Uuid
+  storeId           String             @map("store_id") @db.Uuid
+  customerId        String             @map("customer_id") @db.Uuid
+  responsibleUserId String             @map("responsible_user_id") @db.Uuid
+  number            Int
+  vehicleModel      String             @map("vehicle_model") @db.VarChar(120)
+  licensePlate      String             @map("license_plate") @db.VarChar(12)
+  description       String             @db.VarChar(300)
+  notes             String?            @db.VarChar(500)
+  status            ServiceOrderStatus @default(OPEN)
+  laborAmount       Decimal            @default(0) @map("labor_amount") @db.Decimal(12, 2)
+  productsAmount    Decimal            @default(0) @map("products_amount") @db.Decimal(12, 2)
+  totalAmount       Decimal            @default(0) @map("total_amount") @db.Decimal(12, 2)
+  openedAt          DateTime           @default(now()) @map("opened_at") @db.Timestamptz(3)
+  finishedAt        DateTime?          @map("finished_at") @db.Timestamptz(3)
+  inventoryPostedAt DateTime?          @map("inventory_posted_at") @db.Timestamptz(3)
+  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  store             Store              @relation(fields: [organizationId, storeId], references: [organizationId, id], onDelete: Restrict)
+  customer          Customer           @relation(fields: [organizationId, customerId], references: [organizationId, id], onDelete: Restrict)
+  responsible       User               @relation(fields: [responsibleUserId], references: [id], onDelete: Restrict)
+  items             ServiceOrderItem[]
+  movements         StockMovement[]
+
+  @@unique([organizationId, storeId, number])
+  @@index([organizationId, storeId, status])
+  @@map("service_orders")
+}
+
+model ServiceOrderItem {
+  id             String       @id @default(uuid(7)) @db.Uuid
+  organizationId String       @map("organization_id") @db.Uuid
+  serviceOrderId String       @map("service_order_id") @db.Uuid
+  productId      String       @map("product_id") @db.Uuid
+  quantity       Int
+  unitPrice      Decimal      @map("unit_price") @db.Decimal(12, 2)
+  totalPrice     Decimal      @map("total_price") @db.Decimal(12, 2)
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+  serviceOrder   ServiceOrder @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+  product        Product      @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Restrict)
+
+  @@index([organizationId, serviceOrderId])
+  @@map("service_order_items")
 }
 
 model StoreAccess {
