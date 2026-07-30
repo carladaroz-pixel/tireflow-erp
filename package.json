@@ -8,6 +8,8 @@
     "prebuild": "prisma generate",
     "build": "next build",
     "start": "next start",
+    "demo:build": "next build",
+    "demo:start": "next start -p 3001",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "tsc --project tsconfig.test.json && node --env-file=.env.local --test .test-dist/tests/auth-foundation.test.js .test-dist/tests/organizational-context.test.js .test-dist/tests/minimal-rbac.test.js .test-dist/tests/pilot-web-foundation.test.js .test-dist/tests/invoice-extraction.test.js .test-dist/tests/search-normalization.test.js .test-dist/tests/service-order-rules.test.js",

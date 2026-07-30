@@ -60,9 +60,10 @@ export type AuthorizationContext = {
 };
 
 export type AuthorizationTransaction = Prisma.TransactionClient;
+type AuthorizationReader = Pick<Prisma.TransactionClient, "session">;
 
 export async function getAuthorizationContextInTransaction(
-  tx: AuthorizationTransaction,
+  tx: AuthorizationReader,
   opaqueToken: string,
   now = new Date(),
 ): Promise<AuthorizationContext> {
@@ -179,9 +180,7 @@ export async function getAuthorizationContext(
   opaqueToken: string,
   now = new Date(),
 ): Promise<AuthorizationContext> {
-  return prisma.$transaction((tx) =>
-    getAuthorizationContextInTransaction(tx, opaqueToken, now),
-  );
+  return getAuthorizationContextInTransaction(prisma, opaqueToken, now);
 }
 
 export function requirePermission(
