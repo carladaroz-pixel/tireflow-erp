@@ -3,10 +3,16 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { ProductType, ServiceOrderStatus, StockMovementType } from "@/generated/prisma/client";
-import { requireStorePermission } from "@/lib/auth/authorization";
+import { requirePermission, requireStorePermission } from "@/lib/auth/authorization";
 import { readSessionToken } from "@/lib/auth/web-session";
 import { prisma } from "@/lib/db/prisma";
 import { normalizeSearch } from "@/lib/search/normalize";
+import {
+  assertNonNegativeMoney,
+  assertServiceOrderTransition,
+  parseServiceOrderItems,
+  parseServiceOrderServices,
+} from "@/lib/service-orders/rules";
 
 async function context(permission: "records.create"|"records.update"|"inventory.entry.create"|"inventory.exit.create") {
   const token = await readSessionToken();
@@ -61,20 +67,45 @@ export async function quickStockExit(f:FormData){return batchMove(f,StockMovemen
 
 export async function createServiceOrder(form:FormData){
   const c=await context("records.create");
-  const customerId=text(form,"customerId"),productId=text(form,"productId"),quantity=num(form,"quantity");
+  const customerId=text(form,"customerId");
+  const laborAmount=assertNonNegativeMoney(num(form,"laborAmount"));
+  const services=parseServiceOrderServices(text(form,"services"));
+  const products=parseServiceOrderItems(text(form,"items"));
+  const requestedStatus=text(form,"status");
+  if(!customerId)throw new Error("Confira cliente, serviço e valores.");
+  if(requestedStatus==="FINISHED")requirePermission(c,"inventory.exit.create");
   await prisma.$transaction(async tx=>{
     const customer=await tx.customer.findFirstOrThrow({where:{id:customerId,organizationId:c.organization.id}});
     const last=await tx.serviceOrder.aggregate({where:{organizationId:c.organization.id,storeId:c.store.id},_max:{number:true}});
-    const order=await tx.serviceOrder.create({data:{organizationId:c.organization.id,storeId:c.store.id,customerId,responsibleUserId:c.user.id,number:(last._max.number??0)+1,vehicleModel:customer.vehicleModel,licensePlate:customer.licensePlate,description:text(form,"description"),notes:text(form,"notes")||null,laborAmount:num(form,"laborAmount")}});
-    if(productId&&quantity>0){const p=await tx.product.findFirstOrThrow({where:{id:productId,organizationId:c.organization.id}});await tx.serviceOrderItem.create({data:{organizationId:c.organization.id,serviceOrderId:order.id,productId,quantity,unitPrice:p.salePrice,totalPrice:Number(p.salePrice)*quantity}});await tx.serviceOrder.update({where:{id:order.id},data:{productsAmount:Number(p.salePrice)*quantity,totalAmount:Number(p.salePrice)*quantity+num(form,"laborAmount")}})}
+    const status=requestedStatus==="IN_PROGRESS"?ServiceOrderStatus.IN_PROGRESS:requestedStatus==="FINISHED"?ServiceOrderStatus.FINISHED:ServiceOrderStatus.OPEN;
+    const order=await tx.serviceOrder.create({data:{organizationId:c.organization.id,storeId:c.store.id,customerId,responsibleUserId:c.user.id,number:(last._max.number??0)+1,vehicleModel:customer.vehicleModel,licensePlate:customer.licensePlate,description:services.join(", "),notes:text(form,"notes")||null,laborAmount,status}});
+    let productsAmount=0;
+    for(const item of products){if(!item.productId||!Number.isInteger(item.quantity)||item.quantity<=0)throw new Error("Quantidade inválida.");const p=await tx.product.findFirstOrThrow({where:{id:item.productId,organizationId:c.organization.id,active:true}});const balance=await tx.stockBalance.findUnique({where:{organizationId_storeId_productId:{organizationId:c.organization.id,storeId:c.store.id,productId:p.id}}});if(!balance||item.quantity>balance.quantity)throw new Error(`Saldo insuficiente para ${p.name}.`);const total=Number(p.salePrice)*item.quantity;productsAmount+=total;await tx.serviceOrderItem.create({data:{organizationId:c.organization.id,serviceOrderId:order.id,productId:p.id,quantity:item.quantity,unitPrice:p.salePrice,totalPrice:total}})}
+    if(status===ServiceOrderStatus.FINISHED){for(const item of products){const balance=await tx.stockBalance.findUnique({where:{organizationId_storeId_productId:{organizationId:c.organization.id,storeId:c.store.id,productId:item.productId}}});if(!balance||balance.quantity<item.quantity)throw new Error("Estoque insuficiente.");const next=balance.quantity-item.quantity;const changed=await tx.stockBalance.updateMany({where:{id:balance.id,quantity:balance.quantity},data:{quantity:next}});if(changed.count!==1)throw new Error("Concorrência de estoque.");await tx.stockMovement.create({data:{organizationId:c.organization.id,storeId:c.store.id,productId:item.productId,userId:c.user.id,serviceOrderId:order.id,type:StockMovementType.EXIT,quantity:item.quantity,previousBalance:balance.quantity,resultingBalance:next,reason:"uso em serviço"}})}}
+    await tx.serviceOrder.update({where:{id:order.id},data:{productsAmount,totalAmount:productsAmount+laborAmount,finishedAt:status===ServiceOrderStatus.FINISHED?new Date():null,inventoryPostedAt:status===ServiceOrderStatus.FINISHED?new Date():null}});
   });
   refresh();redirect("/servicos?sucesso=Ordem criada");
+}
+export async function changeServiceOrderStatus(form:FormData){
+  const c=await context("records.update"),id=text(form,"id"),status=text(form,"status");
+  if(!["IN_PROGRESS","WAITING","CANCELLED"].includes(status))throw new Error("Status inválido.");
+  const order=await prisma.serviceOrder.findFirst({where:{id,organizationId:c.organization.id,storeId:c.store.id}});
+  if(!order)throw new Error("Ordem não pode ser alterada.");
+  const next=status as ServiceOrderStatus;
+  assertServiceOrderTransition(order.status,next);
+  const changed=await prisma.serviceOrder.updateMany({where:{id,organizationId:c.organization.id,storeId:c.store.id,status:order.status},data:{status:next}});
+  if(changed.count!==1)throw new Error("A ordem foi alterada por outra operação. Atualize a página.");
+  refresh();redirect("/servicos");
 }
 export async function finishServiceOrder(form:FormData){
   const c=await context("inventory.exit.create"); const id=text(form,"id");
   await prisma.$transaction(async tx=>{
     const order=await tx.serviceOrder.findFirst({where:{id,organizationId:c.organization.id,storeId:c.store.id},include:{items:true}});
-    if(!order||order.status===ServiceOrderStatus.FINISHED||order.inventoryPostedAt) throw new Error("Ordem inválida ou já finalizada.");
+    if(!order||order.inventoryPostedAt) throw new Error("Ordem inválida ou já finalizada.");
+    assertServiceOrderTransition(order.status,ServiceOrderStatus.FINISHED);
+    const now=new Date();
+    const claimed=await tx.serviceOrder.updateMany({where:{id,organizationId:c.organization.id,storeId:c.store.id,status:order.status,inventoryPostedAt:null},data:{status:ServiceOrderStatus.FINISHED,finishedAt:now,inventoryPostedAt:now}});
+    if(claimed.count!==1)throw new Error("Ordem inválida ou já finalizada.");
     for(const item of order.items){
       const balance=await tx.stockBalance.findUnique({where:{organizationId_storeId_productId:{organizationId:c.organization.id,storeId:c.store.id,productId:item.productId}}});
       if(!balance||balance.quantity<item.quantity) throw new Error("Estoque insuficiente.");
@@ -83,6 +114,5 @@ export async function finishServiceOrder(form:FormData){
       if(changed.count!==1) throw new Error("Concorrência de estoque.");
       await tx.stockMovement.create({data:{organizationId:c.organization.id,storeId:c.store.id,productId:item.productId,userId:c.user.id,serviceOrderId:order.id,type:StockMovementType.EXIT,quantity:item.quantity,previousBalance:balance.quantity,resultingBalance:next,reason:"uso em serviço"}});
     }
-    await tx.serviceOrder.update({where:{id},data:{status:ServiceOrderStatus.FINISHED,finishedAt:new Date(),inventoryPostedAt:new Date()}});
   });refresh();redirect("/servicos?sucesso=Ordem finalizada");
 }

@@ -10,7 +10,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "tsc --project tsconfig.test.json && node --env-file=.env.local --test .test-dist/tests/auth-foundation.test.js .test-dist/tests/organizational-context.test.js .test-dist/tests/minimal-rbac.test.js .test-dist/tests/pilot-web-foundation.test.js .test-dist/tests/invoice-extraction.test.js .test-dist/tests/search-normalization.test.js",
+    "test": "tsc --project tsconfig.test.json && node --env-file=.env.local --test .test-dist/tests/auth-foundation.test.js .test-dist/tests/organizational-context.test.js .test-dist/tests/minimal-rbac.test.js .test-dist/tests/pilot-web-foundation.test.js .test-dist/tests/invoice-extraction.test.js .test-dist/tests/search-normalization.test.js .test-dist/tests/service-order-rules.test.js",
     "bootstrap:pilot": "tsc --project tsconfig.test.json && node --env-file=.env.local .test-dist/scripts/bootstrap-pilot.js",
     "demo:seed": "tsc --project tsconfig.test.json && node --env-file=.env.local .test-dist/scripts/demo-seed.js",
     "usability:seed": "tsc --project tsconfig.test.json && node --env-file=.env.local .test-dist/scripts/seed-usability-catalog.js",
